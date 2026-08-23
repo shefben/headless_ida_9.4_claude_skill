@@ -2,47 +2,106 @@ $ErrorActionPreference = "Stop"
 
 $skillsDir = Join-Path $HOME ".claude\skills"
 $targetDir = Join-Path $skillsDir "ida-headless-analysis"
+$sourceSkillDir = Join-Path $PSScriptRoot "ida-headless-analysis"
+$requirementsFile = Join-Path $PSScriptRoot "requirements.txt"
 
-if (-not (Test-Path $skillsDir)) {
-    New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+function Normalize-CandidatePath {
+    param([AllowNull()][string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+
+    $candidate = [Environment]::ExpandEnvironmentVariables($Path.Trim())
+    $candidate = $candidate.Trim('"').Trim()
+    if ([string]::IsNullOrWhiteSpace($candidate)) { return $null }
+
+    return $candidate
 }
 
-Write-Host "Installing skill folder to $targetDir..."
-Copy-Item -Path "ida-headless-analysis" -Destination $targetDir -Recurse -Force
+function Add-UniquePath {
+    param(
+        [System.Collections.Generic.List[string]]$List,
+        [string]$Path
+    )
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    foreach ($existing in $List) {
+        if ([string]::Equals($existing, $Path, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return
+        }
+    }
+    $List.Add($Path)
+}
 
-Write-Host "Searching for IDA 9.2, 9.3, or 9.4 in environment variables..."
-$idaPaths = @()
-foreach ($envVar in (Get-ChildItem Env:)) {
-    $paths = $envVar.Value -split ";"
-    foreach ($p in $paths) {
-        if ($p -match "ida" -and $p -match "9\.[234]") {
-            if (Test-Path $p) {
-                $dir = if ((Get-Item $p) -is [System.IO.FileInfo]) { Split-Path $p } else { $p }
-                if ((Test-Path (Join-Path $dir "ida.exe")) -or (Test-Path (Join-Path $dir "ida64.exe")) -or (Test-Path (Join-Path $dir "idat.exe")) -or (Test-Path (Join-Path $dir "idat64.exe"))) {
-                    if ($idaPaths -notcontains $dir) {
-                        $idaPaths += $dir
-                    }
-                }
-            }
+function Get-EnvironmentPathCandidates {
+    foreach ($envVar in (Get-ChildItem Env:)) {
+        foreach ($raw in ($envVar.Value -split ";")) {
+            $candidate = Normalize-CandidatePath $raw
+            if ($candidate) { $candidate }
         }
     }
 }
 
+if (-not (Test-Path -LiteralPath $skillsDir -PathType Container)) {
+    New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+}
+if (-not (Test-Path -LiteralPath $sourceSkillDir -PathType Container)) {
+    throw "Skill source folder was not found: $sourceSkillDir"
+}
+
+Write-Host "Installing skill folder to $targetDir..."
+if (Test-Path -LiteralPath $targetDir) {
+    Remove-Item -LiteralPath $targetDir -Recurse -Force
+}
+Copy-Item -LiteralPath $sourceSkillDir -Destination $targetDir -Recurse -Force
+
+Write-Host "Searching for IDA 9.4 (with 9.2/9.3 compatibility fallback) in environment variables..."
+$idaPaths = [System.Collections.Generic.List[string]]::new()
+foreach ($candidate in (Get-EnvironmentPathCandidates)) {
+    if ($candidate -notmatch "(?i)ida") { continue }
+    if ($candidate -notmatch "9\.[234]") { continue }
+
+    try {
+        $dir = $null
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $dir = Split-Path -Parent $candidate
+        } elseif (Test-Path -LiteralPath $candidate -PathType Container) {
+            $dir = $candidate
+        } else {
+            continue
+        }
+
+        $hasIda = $false
+        foreach ($exe in @("ida.exe", "ida64.exe", "idat.exe", "idat64.exe")) {
+            if (Test-Path -LiteralPath (Join-Path $dir $exe) -PathType Leaf) {
+                $hasIda = $true
+                break
+            }
+        }
+        if ($hasIda) {
+            $resolved = (Resolve-Path -LiteralPath $dir -ErrorAction Stop).Path
+            Add-UniquePath -List $idaPaths -Path $resolved
+        }
+    } catch {
+        continue
+    }
+}
+
+$idaPaths = @($idaPaths | Sort-Object @{Expression={ if ($_ -match "9\.4") { 0 } elseif ($_ -match "9\.3") { 1 } else { 2 } }}, @{Expression={$_}})
+
 $selectedIda = $null
 if ($idaPaths.Count -eq 0) {
-    $selectedIda = Read-Host "No IDA 9.2, 9.3, or 9.4 found in environment variables. Please enter the path to the IDA folder manually"
+    $selectedIda = Normalize-CandidatePath (Read-Host "No IDA 9.2, 9.3, or 9.4 found in environment variables. Please enter the path to the IDA folder manually")
 } elseif ($idaPaths.Count -eq 1) {
     Write-Host "Found IDA at: $($idaPaths[0])"
     $selectedIda = $idaPaths[0]
 } else {
-    Write-Host "Multiple IDA installations found:"
+    Write-Host "Multiple IDA installations found (9.4 preferred):"
     for ($i = 0; $i -lt $idaPaths.Count; $i++) {
         Write-Host "[$($i + 1)] $($idaPaths[$i])"
     }
     $selection = 0
     while ($selection -lt 1 -or $selection -gt $idaPaths.Count) {
-        $input = Read-Host "Select the correct one by typing the corresponding number"
-        if ([int]::TryParse($input, [ref]$selection)) {
+        $inputValue = Read-Host "Select the correct one by typing the corresponding number"
+        if ([int]::TryParse($inputValue, [ref]$selection)) {
             if ($selection -lt 1 -or $selection -gt $idaPaths.Count) {
                 Write-Host "Invalid selection. Please try again."
             }
@@ -51,30 +110,62 @@ if ($idaPaths.Count -eq 0) {
     $selectedIda = $idaPaths[$selection - 1]
 }
 
-Write-Host "Searching for Python 3.13.* in environment variables..."
-$pythonPaths = @()
-foreach ($envVar in (Get-ChildItem Env:)) {
-    $paths = $envVar.Value -split ";"
-    foreach ($p in $paths) {
-        if (Test-Path $p) {
-            $pyExe = if ((Get-Item $p) -is [System.IO.FileInfo]) { $p } else { Join-Path $p "python.exe" }
-            if (Test-Path $pyExe) {
-                try {
-                    $ver = & $pyExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-                    if ($ver -eq "3.13") {
-                        if ($pythonPaths -notcontains $pyExe) {
-                            $pythonPaths += $pyExe
-                        }
-                    }
-                } catch {}
+if ([string]::IsNullOrWhiteSpace($selectedIda) -or -not (Test-Path -LiteralPath $selectedIda -PathType Container)) {
+    throw "Selected IDA directory does not exist: $selectedIda"
+}
+if ($selectedIda -notmatch "9\.4") {
+    Write-Warning "Selected IDA path does not appear to be IDA 9.4: $selectedIda. The skill targets IDA 9.4; 9.2/9.3 are compatibility fallbacks only."
+}
+
+Write-Host "Searching for Python 3.13.*..."
+$pythonPaths = [System.Collections.Generic.List[string]]::new()
+
+foreach ($commandName in @("python3.13.exe", "python.exe", "python3.exe")) {
+    try {
+        $commands = @(Get-Command $commandName -CommandType Application -All -ErrorAction SilentlyContinue)
+        foreach ($cmd in $commands) {
+            if ($null -eq $cmd -or [string]::IsNullOrWhiteSpace($cmd.Source)) { continue }
+            $pyExe = $cmd.Source
+            try {
+                $ver = (& $pyExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null).Trim()
+                if ($LASTEXITCODE -eq 0 -and $ver -eq "3.13") {
+                    Add-UniquePath -List $pythonPaths -Path ((Resolve-Path -LiteralPath $pyExe -ErrorAction Stop).Path)
+                }
+            } catch { continue }
+        }
+    } catch { }
+}
+
+foreach ($candidate in (Get-EnvironmentPathCandidates)) {
+    try {
+        $pyExe = $null
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            if ([System.IO.Path]::GetFileName($candidate) -match "(?i)^python(?:3(?:\.13)?)?\.exe$") {
+                $pyExe = $candidate
+            }
+        } elseif (Test-Path -LiteralPath $candidate -PathType Container) {
+            $maybe = Join-Path $candidate "python.exe"
+            if (Test-Path -LiteralPath $maybe -PathType Leaf) {
+                $pyExe = $maybe
+            }
+        } else {
+            continue
+        }
+
+        if ($pyExe) {
+            $ver = (& $pyExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null).Trim()
+            if ($LASTEXITCODE -eq 0 -and $ver -eq "3.13") {
+                Add-UniquePath -List $pythonPaths -Path ((Resolve-Path -LiteralPath $pyExe -ErrorAction Stop).Path)
             }
         }
+    } catch {
+        continue
     }
 }
 
 $selectedPython = $null
 if ($pythonPaths.Count -eq 0) {
-    $selectedPython = Read-Host "No Python 3.13.* found. Please enter the path to the python.exe binary manually"
+    $selectedPython = Normalize-CandidatePath (Read-Host "No Python 3.13.* found. Please enter the path to python.exe manually")
 } elseif ($pythonPaths.Count -eq 1) {
     Write-Host "Found Python at: $($pythonPaths[0])"
     $selectedPython = $pythonPaths[0]
@@ -85,8 +176,8 @@ if ($pythonPaths.Count -eq 0) {
     }
     $selection = 0
     while ($selection -lt 1 -or $selection -gt $pythonPaths.Count) {
-        $input = Read-Host "Select the correct one by typing the corresponding number"
-        if ([int]::TryParse($input, [ref]$selection)) {
+        $inputValue = Read-Host "Select the correct one by typing the corresponding number"
+        if ([int]::TryParse($inputValue, [ref]$selection)) {
             if ($selection -lt 1 -or $selection -gt $pythonPaths.Count) {
                 Write-Host "Invalid selection. Please try again."
             }
@@ -95,14 +186,25 @@ if ($pythonPaths.Count -eq 0) {
     $selectedPython = $pythonPaths[$selection - 1]
 }
 
+if ([string]::IsNullOrWhiteSpace($selectedPython) -or -not (Test-Path -LiteralPath $selectedPython -PathType Leaf)) {
+    throw "Selected Python executable does not exist: $selectedPython"
+}
+$selectedPythonVersion = (& $selectedPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null).Trim()
+if ($LASTEXITCODE -ne 0 -or $selectedPythonVersion -ne "3.13") {
+    throw "Selected Python must be Python 3.13.x; got '$selectedPythonVersion' from $selectedPython"
+}
+
 Write-Host "Replacing variables in $targetDir..."
-$files = Get-ChildItem -Path $targetDir -File -Recurse
+$textExtensions = @(".md", ".py", ".json", ".txt", ".toml", ".yaml", ".yml", ".ini", ".cfg", ".ps1", ".sh")
+$files = Get-ChildItem -LiteralPath $targetDir -File -Recurse | Where-Object {
+    $textExtensions -contains $_.Extension.ToLowerInvariant()
+}
 foreach ($file in $files) {
-    $content = Get-Content $file.FullName -Raw
+    $content = Get-Content -LiteralPath $file.FullName -Raw
     if ($content -match "%PYTHON_BIN_PATH%" -or $content -match "%IDA_PATH%") {
         $content = $content.Replace("%PYTHON_BIN_PATH%", $selectedPython)
         $content = $content.Replace("%IDA_PATH%", $selectedIda)
-        Set-Content -Path $file.FullName -Value $content -NoNewline
+        Set-Content -LiteralPath $file.FullName -Value $content -NoNewline -Encoding utf8NoBOM
     }
 }
 
@@ -113,8 +215,8 @@ Write-Host "Installing/Upgrading ida-domain module..."
 if ($LASTEXITCODE -ne 0) { throw "ida-domain upgrade failed" }
 
 Write-Host "Installing requirements from requirements.txt..."
-if (Test-Path "requirements.txt") {
-    & $selectedPython -m pip install -r "requirements.txt"
+if (Test-Path -LiteralPath $requirementsFile -PathType Leaf) {
+    & $selectedPython -m pip install -r $requirementsFile
     if ($LASTEXITCODE -ne 0) { throw "requirements.txt installation failed" }
 }
 

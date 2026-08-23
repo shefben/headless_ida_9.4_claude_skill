@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local/ida-headless-analysis/evidence-packet.schema.json",
+  "title": "IDA Reverse-Engineering Evidence Packet",
+  "type": "object",
+  "required": [
+    "ea",
+    "confidence",
+    "evidence"
+  ],
+  "properties": {
+    "ea": {
+      "type": "string",
+      "pattern": "^0x[0-9A-Fa-f]+$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "prototype": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "arguments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "important_callers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "important_callees": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "constants": {
+      "type": "array",
+      "items": {}
+    },
+    "state_access": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "compilation_unit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "language_runtime": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ctree_facts": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "microcode_facts": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import hashlib
 import json
+import os
 import re
+import subprocess
 from typing import Any, Iterable
 
 
@@ -39,19 +41,115 @@ def binary_id(path: str | Path) -> str:
     return h.hexdigest()[:16]
 
 
+def _git_root(start: Path) -> Path | None:
+    """Return the enclosing git worktree root without requiring GitPython."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(start), "rev-parse", "--show-toplevel"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return Path(proc.stdout.strip()).resolve()
+    except Exception:
+        pass
+    return None
+
+
+def project_root(binary: str | Path | None = None) -> Path:
+    """Resolve the logical project root for globally installed skill state.
+
+    Resolution order:
+      1. IDA_RE_PROJECT_ROOT explicit override.
+      2. Enclosing git worktree for the current working directory.
+      3. Enclosing git worktree for the target binary.
+      4. Current working directory.
+
+    This keeps a globally installed skill from mixing evidence between unrelated projects.
+    """
+    override = os.environ.get("IDA_RE_PROJECT_ROOT")
+    if override:
+        return Path(override).expanduser().resolve()
+
+    cwd = Path.cwd().resolve()
+    root = _git_root(cwd)
+    if root is not None:
+        return root
+
+    if binary is not None:
+        try:
+            bp = Path(binary).expanduser().resolve()
+            root = _git_root(bp.parent)
+            if root is not None:
+                return root
+        except Exception:
+            pass
+
+    return cwd
+
+
+def project_id(binary: str | Path | None = None) -> str:
+    """Return a stable, human-readable project identifier.
+
+    IDA_RE_PROJECT_ID is the authoritative override. Otherwise the identifier is derived from the
+    resolved project-root path and includes a short SHA-256 suffix, preventing collisions between
+    projects that share the same directory basename (for example two different repos named
+    `client`).
+    """
+    override = os.environ.get("IDA_RE_PROJECT_ID")
+    if override:
+        cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", override.strip()).strip("._")
+        if cleaned:
+            return cleaned[:96]
+
+    root = project_root(binary)
+    label = re.sub(r"[^A-Za-z0-9_.-]+", "_", root.name or "project").strip("._") or "project"
+    digest = hashlib.sha256(str(root).encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
+    return f"{label}-{digest}"
+
+
+def state_base(binary: str | Path | None = None, base: str | Path = ".ida-re") -> Path:
+    """Project-scoped persistent state base: .ida-re/projects/<project-id>/"""
+    return Path(base) / "projects" / project_id(binary)
+
+
 def state_root(binary: str | Path, base: str | Path = ".ida-re") -> Path:
-    return Path(base) / binary_id(binary)
+    """Binary state isolated by both project identity and binary content hash."""
+    return state_base(binary, base) / "binaries" / binary_id(binary)
+
+
+def project_database_path(binary: str | Path | None = None, base: str | Path = ".ida-re") -> Path:
+    """Default SQLite project graph path for the active project."""
+    return state_base(binary, base) / "project.sqlite"
 
 
 def ensure_state(binary: str | Path, metadata: dict[str, Any] | None = None) -> Path:
     root = state_root(binary)
     for d in ("functions", "queries"):
         (root / d).mkdir(parents=True, exist_ok=True)
+
+    proj_root = project_root(binary)
+    proj_id = project_id(binary)
+    pbase = state_base(binary)
+    pbase.mkdir(parents=True, exist_ok=True)
+    project_manifest = pbase / "project.json"
+    if not project_manifest.exists():
+        project_manifest.write_text(json.dumps({
+            "project_id": proj_id,
+            "project_root": str(proj_root),
+            "project_database": str(project_database_path(binary)),
+        }, indent=2, default=str) + "\n", encoding="utf-8")
+
     manifest = root / "manifest.json"
     if not manifest.exists():
         payload = {
             "binary": str(Path(binary).resolve()),
             "binary_id": root.name,
+            "project_id": proj_id,
+            "project_root": str(proj_root),
             "metadata": metadata or {},
         }
         manifest.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")

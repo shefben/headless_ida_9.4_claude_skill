@@ -17,6 +17,33 @@ function Normalize-CandidatePath {
     return $candidate
 }
 
+function Normalize-DirectoryPath {
+    param([AllowNull()][string]$Path)
+
+    $candidate = Normalize-CandidatePath $Path
+    if ([string]::IsNullOrWhiteSpace($candidate)) { return $null }
+
+    try {
+        $full = [System.IO.Path]::GetFullPath($candidate)
+    } catch {
+        $full = $candidate
+    }
+
+    # idapro generates Python code containing IDAPYTHON_DYNLOAD_BASE as a raw string.
+    # A Windows directory ending in a single backslash (r"F:\\IDA\\") is invalid Python
+    # because the final backslash escapes the quote. Keep filesystem roots intact, but strip
+    # trailing separators from ordinary directories before exporting IDADIR or replacing tokens.
+    try {
+        $root = [System.IO.Path]::GetPathRoot($full)
+        if (-not [string]::IsNullOrWhiteSpace($root) -and
+            [string]::Equals($full, $root, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $full
+        }
+    } catch { }
+
+    return $full.TrimEnd([char[]]'\/')
+}
+
 function Add-UniquePath {
     param(
         [System.Collections.Generic.List[string]]$List,
@@ -77,7 +104,7 @@ foreach ($candidate in (Get-EnvironmentPathCandidates)) {
             }
         }
         if ($hasIda) {
-            $resolved = (Resolve-Path -LiteralPath $dir -ErrorAction Stop).Path
+            $resolved = Normalize-DirectoryPath ((Resolve-Path -LiteralPath $dir -ErrorAction Stop).Path)
             Add-UniquePath -List $idaPaths -Path $resolved
         }
     } catch {
@@ -89,7 +116,7 @@ $idaPaths = @($idaPaths | Sort-Object @{Expression={ if ($_ -match "9\.4") { 0 }
 
 $selectedIda = $null
 if ($idaPaths.Count -eq 0) {
-    $selectedIda = Normalize-CandidatePath (Read-Host "No IDA 9.2, 9.3, or 9.4 found in environment variables. Please enter the path to the IDA folder manually")
+    $selectedIda = Normalize-DirectoryPath (Read-Host "No IDA 9.2, 9.3, or 9.4 found in environment variables. Please enter the path to the IDA folder manually")
 } elseif ($idaPaths.Count -eq 1) {
     Write-Host "Found IDA at: $($idaPaths[0])"
     $selectedIda = $idaPaths[0]
@@ -110,9 +137,12 @@ if ($idaPaths.Count -eq 0) {
     $selectedIda = $idaPaths[$selection - 1]
 }
 
+# Canonicalize once more after selection so manual input and discovered paths obey the same rule.
+$selectedIda = Normalize-DirectoryPath $selectedIda
 if ([string]::IsNullOrWhiteSpace($selectedIda) -or -not (Test-Path -LiteralPath $selectedIda -PathType Container)) {
     throw "Selected IDA directory does not exist: $selectedIda"
 }
+Write-Host "Using canonical IDA path: $selectedIda"
 if ($selectedIda -notmatch "9\.4") {
     Write-Warning "Selected IDA path does not appear to be IDA 9.4: $selectedIda. The skill targets IDA 9.4; 9.2/9.3 are compatibility fallbacks only."
 }
@@ -209,6 +239,9 @@ foreach ($file in $files) {
 }
 
 $env:IDADIR = $selectedIda
+# idapro/IDAPython may also consult this location while constructing its dynamic loader.
+# Keep it canonical for the same trailing-backslash reason as IDADIR.
+$env:IDAPYTHON_DYNLOAD_BASE = $selectedIda
 
 Write-Host "Installing/Upgrading ida-domain module..."
 & $selectedPython -m pip install --upgrade "ida-domain>=0.5.0,<0.6.0"
@@ -220,6 +253,7 @@ if (Test-Path -LiteralPath $requirementsFile -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) { throw "requirements.txt installation failed" }
 }
 
+Write-Host "Verifying ida-domain/idapro imports with IDADIR=$env:IDADIR..."
 & $selectedPython -c "import ida_domain, idapro; print('ida-domain/idapro import OK')"
 if ($LASTEXITCODE -ne 0) { throw "IDA Python verification failed" }
 

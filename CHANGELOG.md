@@ -19,6 +19,9 @@
 - Added semantic API effects for buffer input/output/copy/crypto/process behavior.
 - Added multi-binary project SQLite state for EXE/DLL/shared-library/plugin investigations.
 - Added SQLite evidence graph with entities, claims, provenance, confidence and automatic contradiction surfacing.
+- Added global/per-project installation-safe state namespacing: `.ida-re/projects/<project-id>/binaries/<binary-id>/`.
+- Project IDs are derived from the resolved project root plus a SHA-256 suffix, with `IDA_RE_PROJECT_ID` and `IDA_RE_PROJECT_ROOT` overrides.
+- Project/evidence SQLite databases now persist identity metadata and reject conflicting project reuse instead of silently mixing state.
 - Reworked `ida_apply_findings.py` into plan/apply/verify/rollback workflow with rollback manifests.
 - Added specialist protocol/C++/crypto/filesystem/rendering/version-diff investigator recipes.
 - Rewrote `SKILL.md` so Claude prefers worker/batch execution, semantic retrieval, canonical packets, evidence reuse and bounded proof-oriented escalation.

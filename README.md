@@ -1,10 +1,9 @@
-# Claude IDA Headless Reverse-Engineering Skill (IDA 9.4)
+# Claude IDA Headless Reverse-Engineering Skill (IDA 9.4) V3
 
 A Claude skill for evidence-driven, token-bounded reverse engineering with **IDA Pro 9.4**, `idalib`, `ida-domain 0.5.x`, IDAPython, and Hex-Rays.
 
 The skill is intended primarily as a **global Claude skill** installed at `~/.claude/skills/ida-headless-analysis`, although it can also be installed per project.
 
-> **Branch status:** `main` contains the v2 analysis baseline plus the current cross-platform installer/discovery fixes. The `feature/intelligence-speed-v2` branch contains the v3 intelligence/speed expansion: persistent workers, semantic indexing, microcode slicing/taint, C++ recovery, version matching, evidence/project SQLite, autonomous investigation frontier, transactional findings, and project-isolated state.
 
 ## Core analysis features
 
@@ -24,7 +23,6 @@ The baseline skill provides:
 - IDA 9.4 platform guidance for Swift, Rust, Go, Objective-C/DSC, Hexagon/MBN, ARM, RISC-V, TriCore and more;
 - Domain API first with IDAPython/SDK fallbacks for unwrapped functionality.
 
-The v3 feature branch expands this with single-session worker/batch execution, function ranking and semantic search, canonical function packets, microcode value slicing, indirect-call/vtable analysis, C++/structure recovery, dispatch reconstruction, cross-version matching, FLIRT discovery, semantic API knowledge, multi-binary project graphs, SQLite evidence graphs, contradiction tracking, specialist investigators, and cost-aware autonomous analysis.
 
 ## Requirements
 

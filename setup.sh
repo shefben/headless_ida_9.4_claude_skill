@@ -198,7 +198,6 @@ if [[ -n "$IDA_PATH_ARG" ]]; then
         exit 1
     fi
 else
-    # Environment values and PATH components.
     while IFS='=' read -r name value; do
         [[ "$name" =~ [Ii][Dd][Aa] || "$value" =~ [Ii][Dd][Aa] ]] || continue
         IFS=':' read -r -a parts <<< "$value"
@@ -212,9 +211,9 @@ else
         add_ida "$p" "PATH"
     done
 
-    # If one IDA is discoverable, nearby installs are often siblings.
     parents=()
     for p in "${IDA_PATHS[@]:-}"; do
+        [[ -n "$p" ]] || continue
         parent="$(dirname "$p")"
         duplicate=0
         for existing in "${parents[@]:-}"; do
@@ -223,10 +222,10 @@ else
         (( duplicate == 0 )) && parents+=("$parent")
     done
     for parent in "${parents[@]:-}"; do
+        [[ -n "$parent" ]] || continue
         scan_ida_children "$parent" 1 "sibling-scan"
     done
 
-    # Common Linux/macOS/user tool locations. Deliberately shallow to avoid crawling the machine.
     for base in \
         /opt /usr/local /Applications \
         "$HOME" "$HOME/opt" "$HOME/tools" "$HOME/Tools" "$HOME/apps" "$HOME/Applications" \
@@ -244,7 +243,6 @@ if [[ ${#IDA_PATHS[@]} -eq 0 ]]; then
     fi
 fi
 
-# Create a sorted list of indices, 9.4 first, then 9.3, 9.2, 9.1, unknown.
 rank_version() {
     case "$1" in
         9.4) echo 0 ;;

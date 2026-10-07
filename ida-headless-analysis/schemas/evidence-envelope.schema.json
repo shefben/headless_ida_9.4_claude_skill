@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deterministic Evidence Envelope",
+  "type": "object",
+  "required": [
+    "evidence_id",
+    "subject",
+    "provider",
+    "operation",
+    "parameters",
+    "normalized_result",
+    "confidence",
+    "authority",
+    "limitations",
+    "locations",
+    "evidence_links"
+  ],
+  "properties": {
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^ev_[0-9a-f]{64}$"
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "format"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format": {
+          "type": "string"
+        },
+        "architecture": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "local_path": {
+          "type": "string"
+        }
+      }
+    },
+    "provider": {
+      "type": "object"
+    },
+    "analysis_profile_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "predicate_type": {
+      "type": "string"
+    },
+    "operation": {
+      "type": "string"
+    },
+    "parameters": {
+      "type": "object"
+    },
+    "raw_result": {},
+    "normalized_result": {},
+    "confidence": {
+      "enum": [
+        "observed",
+        "derived",
+        "inferred"
+      ]
+    },
+    "authority": {
+      "enum": [
+        "shipped-artifact",
+        "controlled-replay",
+        "historical-reference",
+        "external-service",
+        "analyst-inference"
+      ]
+    },
+    "environment": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "limitations": {
+      "type": "array"
+    },
+    "locations": {
+      "type": "array"
+    },
+    "evidence_links": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^ev_[0-9a-f]{64}$"
+      }
+    }
+  },
+  "additionalProperties": true
+}

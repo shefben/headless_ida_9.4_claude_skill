@@ -1,6 +1,8 @@
 ---
 name: ida-headless-analysis
-description: Reverse engineer EXE, DLL, ELF, Mach-O, firmware and other binaries headlessly with IDA Pro 9.4/idalib using mandatory auto-analysis + Hex-Rays, single-session execution, semantic retrieval, project-isolated evidence graphs, structured C-tree/microcode, taint/slicing, C++ recovery, version matching, and token-bounded autonomous investigation.
+description: Reverse engineer EXE, DLL, ELF, Mach-O, firmware and other binaries headlessly with IDA Pro 9.4/idalib using mandatory auto-analysis + Hex-Rays, single-session execution, semantic retrieval, project-isolated evidence graphs, structured C-tree/microcode, taint/slicing, typed call-edge/value tracing, deterministic evidence/unknown/completion ledgers, reconstruction verification, C++ recovery, version matching, and token-bounded autonomous investigation.
+metadata:
+  version: "4.0.0-ida9.4"
 ---
 
 # IDA 9.4 Headless Reverse Engineering
@@ -33,6 +35,8 @@ All persistent state uses:
     semantic.sqlite
     frontier.sqlite
     evidence.sqlite
+    snapshot.sqlite
+    analysis_profile.json
     functions/
     queries/
     findings.jsonl
@@ -58,7 +62,7 @@ Do not spawn multiple workers against the same writable IDB. Keep generated anal
 
 Use the cheapest evidence that can answer the question and stop when it does:
 
-`cache/evidence graph -> semantic search/indexer -> triage -> rank -> exact byte string/constant -> canonical function packet -> xrefs/callers/callees -> C-tree -> CFG -> pseudocode -> microcode -> taint/slice -> type/class recovery -> assembly verification`
+`exact snapshot/evidence -> semantic search/indexer -> triage -> rank -> exact byte string/constant -> canonical function packet -> typed xrefs/call edges -> C-tree -> CFG -> pseudocode -> microcode -> taint/interprocedural value graph -> type/class recovery -> controlled runtime capture -> assembly verification`
 
 Before an expensive query, know what it should prove or disprove. `ida_advanced.py plan` can produce a cost-aware investigation order. Prefer information gain per unit cost over dumping pseudocode.
 
@@ -179,26 +183,112 @@ The project graph has a project-scoped default location, so callers should norma
 
 The default is `.ida-re/projects/<project-id>/project.sqlite`. Use `--db PATH` only for an intentional custom database. The database stores its `project_id` and rejects use from a conflicting project identity. Link binaries through imports/exports, shared semantic fingerprints, names, strings and protocol artifacts.
 
-## Evidence graph and contradictions
+## Deterministic evidence, authority, and contradictions
 
-JSONL remains a portable log, but the project/binary-scoped `evidence.sqlite` is preferred working memory:
+JSONL remains a portable log, but the project/binary-scoped `evidence.sqlite` is the preferred working memory. Material observations should use deterministic Evidence envelopes:
 
 ```powershell
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN observe-add function.packet packet.json --parameters params.json --confidence observed --authority shipped-artifact
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN observe-list --limit 20
 %PYTHON_BIN_PATH% scripts\ida_evidence.py BIN claim-add function 0x140012340 purpose PacketDecode --confidence 0.9 --source ctree
-%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN query Packet
 %PYTHON_BIN_PATH% scripts\ida_evidence.py BIN conflicts
 %PYTHON_BIN_PATH% scripts\ida_evidence.py BIN info
 ```
 
-Evidence databases record `project_id`, `project_root`, and `binary_id` internally and reject identity mismatches. Claims must record provenance/confidence. Resolve contradictions rather than quietly retaining whichever guess was encountered first.
+Each `ev_<sha256>` commits to target SHA-256, provider/profile, operation, exact parameters, result, categorical confidence, authority, limitations, locations, and linked Evidence. Keep `observed`, `derived`, and `inferred` distinct. Keep `shipped-artifact`, `controlled-replay`, `historical-reference`, `external-service`, and `analyst-inference` authority distinct. Static analysis never becomes runtime observation merely because the explanation sounds convincing.
+
+Preserve contradictions. If two supported claims conflict, record the conflict and create/update a residual unknown instead of silently retaining whichever guess arrived last.
+
+## Analysis-profile commitments and exact snapshots
+
+Every successful `open_database()` persists `analysis_profile.json`; `ida_profile.py BIN` emits it explicitly. The digest includes concrete IDA/Hex-Rays/ida-domain versions, architecture/bitness, and mandatory analysis settings. Semantic indexes are profile-bound and `ida_diff.py` refuses mismatched indexes unless `--allow-profile-mismatch` is explicit.
+
+For expensive immutable queries, use the exact snapshot cache:
+
+```powershell
+%PYTHON_BIN_PATH% scripts\ida_cache.py BIN get operation params.json
+%PYTHON_BIN_PATH% scripts\ida_cache.py BIN put operation params.json result.json
+```
+
+A cache key is binary SHA-256 + analysis-profile digest + operation + canonical parameters. Never reuse stale results after an IDA/Hex-Rays/profile change. Do not cache mutation-dependent/cursor-dependent observations as immutable truth.
+
+## Revisioned residual unknowns
+
+Unknowns are first-class revisioned records with stable IDs, severity, domain, supporting/contradicting Evidence, required authority/confidence/environment, recommended probes, relationships, and evidence-qualified resolution:
+
+```powershell
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN unknown-add unknown.json
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN unknown-list
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN unknown-update unk_... 3 patch.json
+```
+
+Updates require the expected revision and fail on stale writers. `verified` resolution requires Evidence IDs. Contradicted unknowns require contradicting evidence. Link frontier items to `--unknown-id` and `--required-authority` so the planner chooses probes capable of actually resolving the question.
+
+## Fail-closed completion and reconstruction obligations
+
+Before declaring a broad investigation complete, create one completion record for each promised claim: `pass`, `fail`, `unsupported`, `truncated`, or `unknown`, with Evidence IDs. `complete=true` only when every required claim passes:
+
+```powershell
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN completion-build completion.json
+```
+
+For ports/reimplementations, turn required behavior into reconstruction obligations rather than stopping at plausible pseudocode:
+
+```powershell
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN obligation-add obligation.json
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN obligation-evaluate protocol.login.parse
+%PYTHON_BIN_PATH% scripts\ida_evidence.py BIN obligation-list
+```
+
+Required obligations close only when they have a unique implementation owner, required parser/schema/domain types, every required original/reconstruction case, no unresolved blocking unknowns/contradictions, and a passing verifier with the required authority. Missing proof stays open.
+
+## Typed call edges and bounded interprocedural values
+
+`ida_indirect.py BIN resolve FUNC` classifies callsites as `direct`, `resolved-indirect`, `candidate`, or `unresolved`. Only direct and uniquely resolved-indirect edges are concrete traversal edges. Ambiguous candidates are frontier hypotheses.
+
+Use `ida_value_trace.py` when a question crosses function boundaries:
+
+```powershell
+%PYTHON_BIN_PATH% scripts\ida_value_trace.py BIN FUNC --max-depth 3 --max-functions 16 --max-call-sites 256
+```
+
+It composes decompiler-derived local def/use edges with concrete typed call edges under explicit depth/function/call/node/edge budgets. Alias effects, ambiguous calls, missing microcode, budget exhaustion, and unproven argument/return bindings remain explicit unknowns.
+
+## Controlled runtime comparison
+
+When static evidence cannot establish behavior, declare an exact bounded scenario and capture it rather than improvising execution:
+
+```powershell
+%PYTHON_BIN_PATH% scripts\ida_capture.py capture original.json --subject BIN
+%PYTHON_BIN_PATH% scripts\ida_capture.py capture reconstruction.json --subject BIN
+%PYTHON_BIN_PATH% scripts\ida_capture.py compare original.capture.json reconstruction.capture.json --subject BIN
+```
+
+Process capture is not a sandbox and runs with caller permissions. Comparison reports dimensions independently and localizes the first divergence. Truncated dimensions are unknown, never equivalent. A successful comparison proves only the declared finite dimensions.
+
+## Historical sources and optional artifact front ends
+
+Old source trees are useful but must stay separate from current-binary observations:
+
+```powershell
+%PYTHON_BIN_PATH% scripts\ida_reference.py BIN C:\old-source
+```
+
+Historical source is `historical-reference`, never `shipped-artifact`. For packages/APKs/firmware, use `ida_artifact.py BIN inspect` and optional explicitly supplied `binwalk`, `unblob`, or `jadx` adapters. External preprocessor output is `external-service` evidence and must be corroborated before native semantic claims. NativeAOT/other-tool metadata follows the same rule.
+
+## Tool-effect contracts and conformance
+
+Before autonomous execution/mutation/extraction, inspect `ida_capabilities.py`. It labels read-only, destructive, idempotent/open-world behavior, prerequisites, and side effects so runtime capture or database mutation cannot masquerade as ordinary inspection.
+
+Run `scripts/conformance_test.py` for pure-Python deterministic evidence/unknown/completion/reconstruction checks and `scripts/validate_skill.py` for package invariants. `fail`, `unsupported`, `truncated`, and `unknown` never aggregate to pass.
 
 ## Autonomous investigators and frontier
 
-Use specialist recipes for protocol, C++ class, crypto, filesystem, rendering and version-diff investigations:
+Use specialist recipes for protocol, C++ class, crypto, filesystem, rendering, version-diff, crash, reconstruction, residual-unknown audit, and controlled process-capture investigations:
 
 ```powershell
 %PYTHON_BIN_PATH% scripts\ida_advanced.py BIN investigator protocol "recover login packet flow"
-%PYTHON_BIN_PATH% scripts\ida_advanced.py BIN frontier-add "who initializes global X" --priority 8 --cost 2
+%PYTHON_BIN_PATH% scripts\ida_advanced.py BIN frontier-add "who initializes global X" --priority 8 --cost 2 --unknown-id unk_... --required-authority shipped-artifact
 %PYTHON_BIN_PATH% scripts\ida_advanced.py BIN frontier-next
 ```
 
@@ -206,7 +296,7 @@ The frontier orders unresolved questions by expected utility (`priority / cost`)
 
 ## Transactional database mutation
 
-Names/types/comments are hypotheses until verified. `ida_apply_findings.py` defaults to `--mode plan` and records current state plus proposed changes. Apply only high-confidence findings, redecompile affected functions, verify the result, and roll back bad semantic changes.
+Names/types/comments are hypotheses until verified. Database-lock recovery is preserve-first: inspect candidate lock owners, prove staleness, and never delete an `.i64`/`.idb` merely because IDA reports it locked. `ida_apply_findings.py` defaults to `--mode plan` and records current state plus proposed changes. Apply only high-confidence findings, redecompile affected functions, verify the result, and roll back bad semantic changes.
 
 ## Batch/worker examples
 
@@ -240,6 +330,9 @@ Unless explicitly requested otherwise: search/string hits 30; callers/callees 20
 %PYTHON_BIN_PATH% scripts\ida_dataflow.py BIN FUNC --maturity locopt
 %PYTHON_BIN_PATH% scripts\ida_path.py BIN SourceFunc TargetFunc --shortest
 %PYTHON_BIN_PATH% scripts\ida_sourcesink.py BIN network_input process_execution
+%PYTHON_BIN_PATH% scripts\ida_value_trace.py BIN FUNC --max-depth 3
+%PYTHON_BIN_PATH% scripts\ida_profile.py BIN
+%PYTHON_BIN_PATH% scripts\ida_capabilities.py
 %PYTHON_BIN_PATH% scripts\ida_function_slice.py BIN FUNC
 %PYTHON_BIN_PATH% scripts\ida_callgraph.py BIN FUNC --depth 2
 %PYTHON_BIN_PATH% scripts\ida_query.py BIN pseudocode FUNC
@@ -252,7 +345,7 @@ Prefer IDA Domain API. Use IDAPython/SDK where Domain lacks an operation, for lo
 
 ## Reference loading
 
-Load only what the task requires: `reference/ida94.md`, `domain-api.md`, `hexrays.md`, `workflows.md`, `type-recovery.md`, `platforms.md`, `apple-dsc.md`, or `troubleshooting.md`.
+Load only what the task requires: `reference/ida94.md`, `domain-api.md`, `hexrays.md`, `workflows.md`, `type-recovery.md`, `evidence-verification.md`, `reconstruction.md`, `runtime-artifacts.md`, `platforms.md`, `apple-dsc.md`, or `troubleshooting.md`.
 
 ## Critical anti-patterns
 
@@ -262,7 +355,12 @@ Load only what the task requires: `reference/ida94.md`, `domain-api.md`, `hexray
 - Dumping pseudocode when a canonical packet/C-tree fact answers the question.
 - Treating static call paths as runtime or value-flow proof.
 - Treating pseudocode as machine truth.
-- Treating unresolved indirect calls as concrete edges.
+- Treating unresolved or multi-candidate indirect calls as concrete edges.
+- Treating inference/historical/external evidence as current shipped-artifact observation.
+- Marking an investigation complete while required claims are failed, unsupported, truncated, or unknown.
+- Marking a reconstruction complete without required original/reconstruction cases and verifier authority.
+- Reusing semantic/query caches across mismatched analysis-profile digests.
+- Deleting a locked IDB/i64 without proving the lock is stale and preserving the database.
 - Repeating queries already represented in canonical packets/evidence.sqlite.
 - Applying low-confidence names/types/comments.
 - Ignoring contradictions after new evidence appears.

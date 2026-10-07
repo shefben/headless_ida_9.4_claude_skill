@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fail-Closed Evidence Completion Ledger",
+  "type": "object",
+  "required": [
+    "ledger_id",
+    "records",
+    "summary"
+  ],
+  "properties": {
+    "ledger_id": {
+      "type": "string",
+      "pattern": "^ecl_[0-9a-f]{64}$"
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "claim_id",
+          "status",
+          "evidence_ids"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "unsupported",
+              "truncated",
+              "unknown"
+            ]
+          },
+          "evidence_ids": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total",
+        "pass",
+        "fail",
+        "unsupported",
+        "truncated",
+        "unknown",
+        "complete"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

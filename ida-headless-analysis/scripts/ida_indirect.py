@@ -20,17 +20,26 @@ def resolve(db,target,limit=200):
         mnem=safe_text(ida_ua.print_insn_mnem(head)).lower()
         if not (mnem.startswith("call") or mnem in {"jmp","blr","br","jalr"}): continue
         direct=list(idautils.CodeRefsFrom(head,False))
-        if direct: continue
         text=safe_text(ida_ua.print_operand(head,0)); data_refs=[int(x) for x in idautils.DataRefsFrom(head)]
+        if direct:
+            targets=[]
+            for dst in direct[:16]:
+                fn=ida_funcs.get_func(dst); fea=int(fn.start_ea) if fn else int(dst)
+                targets.append({"ea":hex(fea),"name":ida_name.get_name(fea) or f"sub_{fea:x}","resolution":"direct"})
+            out.append({"callsite":hex(int(head)),"operand":text,"data_refs":[],"targets":targets,"candidates":[],"resolution":"direct"})
+            if len(out)>=limit: break
+            continue
         candidates=[]
         for dr in data_refs[:16]:
             val=ida_bytes.get_qword(dr) if ida_bytes.is_loaded(dr) else ida_idaapi.BADADDR
             if val!=ida_idaapi.BADADDR:
                 fn=ida_funcs.get_func(val)
                 if fn: candidates.append({"ea":hex(int(fn.start_ea)),"name":ida_name.get_name(int(fn.start_ea)) or f"sub_{int(fn.start_ea):x}","via":hex(dr)})
-        out.append({"callsite":hex(int(head)),"operand":text,"data_refs":[hex(x) for x in data_refs[:16]],"candidates":candidates,"confidence":"candidate" if candidates else "unresolved"})
+        resolution="resolved-indirect" if len(candidates)==1 else ("candidate" if candidates else "unresolved")
+        targets=candidates if resolution=="resolved-indirect" else []
+        out.append({"callsite":hex(int(head)),"operand":text,"data_refs":[hex(x) for x in data_refs[:16]],"targets":targets,"candidates":candidates,"resolution":resolution})
         if len(out)>=limit: break
-    return {"ea":hex(ea),"indirect_calls":out,"resolved_candidates":sum(bool(x["candidates"]) for x in out)}
+    return {"ea":hex(ea),"call_edges":out,"indirect_calls":[x for x in out if x.get("resolution")!="direct"],"resolved_indirect":sum(x.get("resolution")=="resolved-indirect" for x in out),"ambiguous_candidates":sum(x.get("resolution")=="candidate" for x in out),"unresolved":sum(x.get("resolution")=="unresolved" for x in out),"note":"Only direct and uniquely resolved-indirect edges are concrete. Candidate edges remain frontier hypotheses."}
 
 
 def vtables(db,limit=200):
@@ -59,6 +68,6 @@ def main()->int:
     with open_database(a.binary) as db:
         root=ensure_state(a.binary,ida_query._metadata(db)); result=resolve(db,a.target,a.limit) if a.cmd=="resolve" else vtables(db,a.limit)
         out=root/"queries"/f"indirect_{a.cmd}.json"; out.write_text(json.dumps(result,indent=2,ensure_ascii=False,default=str)+"\n",encoding="utf-8")
-        print(json.dumps({"saved":str(out),"command":a.cmd,"count":len(result) if isinstance(result,list) else len(result.get("indirect_calls",[]))},indent=2))
+        print(json.dumps({"saved":str(out),"command":a.cmd,"count":len(result) if isinstance(result,list) else len(result.get("call_edges",[]))},indent=2))
     return 0
 if __name__=="__main__": raise SystemExit(main())

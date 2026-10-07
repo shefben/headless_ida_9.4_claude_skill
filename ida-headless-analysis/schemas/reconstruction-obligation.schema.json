@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconstruction Obligation",
+  "type": "object",
+  "required": [
+    "obligation_id",
+    "title",
+    "required_case_kinds"
+  ],
+  "properties": {
+    "obligation_id": {
+      "type": "string"
+    },
+    "obligation_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "title": {
+      "type": "string"
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "required_case_kinds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requires_parser_type": {
+      "type": "boolean"
+    },
+    "owner": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "parser_type": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "original_cases": {
+      "type": "array"
+    },
+    "reconstruction_cases": {
+      "type": "array"
+    },
+    "residual_unknown_ids": {
+      "type": "array"
+    },
+    "contradictions": {
+      "type": "array"
+    },
+    "unavailable_authority": {
+      "type": "array"
+    },
+    "required_verifier_authority": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verifier": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

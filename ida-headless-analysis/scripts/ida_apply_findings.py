@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse, json, time
 from pathlib import Path
 from _ida_session import open_database
-from _common import ensure_state
+from _common import ensure_state, bump_analysis_epoch
 import ida_query
 
 def current(ea:int):
@@ -30,7 +30,8 @@ def main()->int:
                 ok_name=ida_name.set_name(ea,before.get("name","") or f"sub_{ea:x}",ida_name.SN_FORCE)
                 ok_cmt=ida_bytes.set_cmt(ea,before.get("comment","") or "",False)
                 results.append({"ea":hex(ea),"restored_name":bool(ok_name),"restored_comment":bool(ok_cmt)})
-            print(json.dumps({"mode":"rollback","results":results},indent=2)); return 0
+            epoch=bump_analysis_epoch(args.binary)
+            print(json.dumps({"mode":"rollback","results":results,"analysis_epoch":epoch},indent=2)); return 0
         planned=[]
         for item in payload.get("functions",[]):
             conf=float(item.get("confidence",0)); ea=int(str(item["ea"]),0)
@@ -51,6 +52,6 @@ def main()->int:
                     ok=bool(f and hasattr(db.functions,"apply_declaration") and db.functions.apply_declaration(f,after["prototype"])); changes.append("prototype") if ok else None; verify.append({"prototype_applied":ok})
                 except Exception as exc: verify.append({"prototype_applied":False,"error":str(exc)})
             results.append({"ea":hex(ea),"changes":changes,"verification":verify})
-        final={"mode":"apply","manifest":str(manifest),"results":results,"skipped":skipped}; (root/"queries"/"applied_findings.json").write_text(json.dumps(final,indent=2)+"\n",encoding="utf-8"); print(json.dumps(final,indent=2))
+        epoch=bump_analysis_epoch(args.binary); final={"mode":"apply","manifest":str(manifest),"results":results,"skipped":skipped,"analysis_epoch":epoch}; (root/"queries"/"applied_findings.json").write_text(json.dumps(final,indent=2)+"\n",encoding="utf-8"); print(json.dumps(final,indent=2))
     return 0
 if __name__=="__main__": raise SystemExit(main())

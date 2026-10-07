@@ -114,3 +114,62 @@ Question: "What is field +0x38?"
 3. inspect C-tree call arguments at each edge;
 4. use microcode at `calls`/`locopt` maturity for argument propagation;
 5. only claim a value flow after the actual data dependence is supported.
+
+## Investigate a feature with evidence closure
+
+1. Write a bounded checklist of questions before expanding the graph.
+2. Reuse exact snapshots/evidence whose binary SHA-256 and analysis-profile digest match.
+3. Start with the smallest useful artifact/function inventory and semantic seeds.
+4. Follow typed call edges and compact function packets before pseudocode dumps.
+5. Record each material observation as Evidence with authority/confidence/limitations.
+6. Create residual unknowns for ambiguity, contradictions, budget truncation, or missing authority.
+7. Use runtime capture only when static evidence cannot answer the required question.
+8. Build a completion ledger for the original checklist; do not declare completion unless all required claims pass.
+
+## Compare application/binary versions conservatively
+
+1. Build semantic indexes for both versions under matching analysis-profile digests.
+2. Exact fingerprint matches first, weighted similarity only for unmatched functions.
+3. Keep added/removed/unmatched regions explicit rather than forcing a correspondence.
+4. Record static differences as candidates, not proof of changed runtime behavior.
+5. If behavior matters, run matched controlled scenarios and compare by dimension.
+6. Preserve truncation/unsupported dimensions as unknown.
+
+## Verify a reconstruction
+
+1. Convert required behaviors into stable reconstruction obligations.
+2. Give every required obligation one implementation owner and owner digest.
+3. Add parser/schema/domain types where structured input is involved.
+4. Capture required original cases: positive, negative, malformed, plus cancellation/teardown where relevant.
+5. Capture the same cases for the reconstruction.
+6. Resolve or explicitly block every residual unknown referenced by the obligation.
+7. Run a verifier with authority comparable to the original observation.
+8. Close only when `obligation-evaluate` reports `ready`.
+
+## Trace a crash
+
+1. Record exact target digest/build, inputs, exit/crash symptom, and environment.
+2. Search error strings/imports/exceptions and identify candidate static routes.
+3. Inspect relevant C-tree/microcode, branch conditions, and types.
+4. Record competing hypotheses as residual unknowns.
+5. If safe and necessary, run one bounded controlled scenario reproducing the crash.
+6. Correlate runtime symptom with static evidence without claiming causality from proximity alone.
+7. Completion must distinguish root cause proved, contributing factor, and unresolved alternatives.
+
+## Audit residual unknowns
+
+1. `ida_evidence.py BIN unknown-list`.
+2. Prioritize contradicted, critical/high severity, and dependency-blocking unknowns.
+3. For each, inspect `required_authority`, `required_confidence`, and environment.
+4. Choose the cheapest probe that can actually satisfy those requirements.
+5. Update with the current expected revision; stale updates must be reread and reconciled.
+6. Do not resolve with a lower-authority observation than the unknown requires.
+
+## Prepare bounded process capture
+
+1. Declare exact command, cwd, environment overrides, timeout, stdin and snapshot paths.
+2. Do not broaden execution beyond the declared scenario.
+3. Capture original and reconstruction separately.
+4. Treat stdout/stderr/filesystem truncation as unknown.
+5. Compare dimensions independently and inspect the first divergence.
+6. Record the comparison as controlled-replay Evidence and link it to the relevant obligation/unknown.

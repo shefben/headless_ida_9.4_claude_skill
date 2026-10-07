@@ -136,13 +136,18 @@ def verify(db,target):
 
 
 def frontier_db(root):
-    p=root/"frontier.sqlite"; con=sqlite3.connect(p); con.execute("CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY,text TEXT,ea TEXT,priority REAL,cost REAL,status TEXT DEFAULT 'open',investigator TEXT,created REAL)"); return p,con
+    p=root/"frontier.sqlite"; con=sqlite3.connect(p)
+    con.execute("CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY,text TEXT,ea TEXT,priority REAL,cost REAL,status TEXT DEFAULT 'open',investigator TEXT,created REAL,unknown_id TEXT,required_authority TEXT,evidence_ids_json TEXT DEFAULT '[]')")
+    cols={r[1] for r in con.execute("PRAGMA table_info(questions)")}
+    for name,decl in (("unknown_id","TEXT"),("required_authority","TEXT"),("evidence_ids_json","TEXT DEFAULT '[]'")):
+        if name not in cols: con.execute(f"ALTER TABLE questions ADD COLUMN {name} {decl}")
+    con.commit(); return p,con
 
-def frontier_add(con,text,ea,priority,cost,investigator):
-    con.execute("INSERT INTO questions(text,ea,priority,cost,investigator,created) VALUES(?,?,?,?,?,?)",(text,ea,priority,cost,investigator,time.time())); con.commit()
+def frontier_add(con,text,ea,priority,cost,investigator,unknown_id=None,required_authority=None):
+    con.execute("INSERT INTO questions(text,ea,priority,cost,investigator,created,unknown_id,required_authority,evidence_ids_json) VALUES(?,?,?,?,?,?,?,?,?)",(text,ea,priority,cost,investigator,time.time(),unknown_id,required_authority,"[]")); con.commit()
 
 def frontier_next(con,limit=20):
-    return [{"id":r[0],"text":r[1],"ea":r[2],"priority":r[3],"cost":r[4],"investigator":r[5],"utility":round(r[3]/max(r[4],.1),3)} for r in con.execute("SELECT id,text,ea,priority,cost,investigator FROM questions WHERE status='open' ORDER BY priority/cost DESC LIMIT ?",(limit,))]
+    return [{"id":r[0],"text":r[1],"ea":r[2],"priority":r[3],"cost":r[4],"investigator":r[5],"unknown_id":r[6],"required_authority":r[7],"evidence_ids":json.loads(r[8] or "[]"),"utility":round(r[3]/max(r[4],.1),3)} for r in con.execute("SELECT id,text,ea,priority,cost,investigator,unknown_id,required_authority,evidence_ids_json FROM questions WHERE status='open' ORDER BY priority/cost DESC LIMIT ?",(limit,))]
 
 
 def specialist(kind,goal):
@@ -152,7 +157,11 @@ def specialist(kind,goal):
       "crypto":["find crypto imports/constants","identify callers","trace input/output buffers","verify algorithm assumptions"],
       "filesystem":["find path/file APIs","trace filename and buffers","group wrappers","verify modes/error paths"],
       "rendering":["find graphics API imports","rank high fan-in wrappers","recover object layouts","trace frame/update entry points"],
-      "version-diff":["build semantic indexes","exact fingerprint matches","weighted unmatched matching","propagate only verified names/types"],
+      "version-diff":["build profile-matched semantic indexes","exact fingerprint matches","weighted unmatched matching","record changed/unknown behavior separately","propagate only verified names/types"],
+      "crash":["record exact crash symptom/build identity","locate static candidate paths","inspect exception/error handling","use a bounded controlled process scenario when static evidence cannot answer reachability","record unresolved alternatives"],
+      "reconstruction":["turn required behaviors into reconstruction obligations","bind each obligation to an implementation owner","capture positive/negative/malformed original cases","capture reconstruction cases","close only with comparable verifier evidence"],
+      "unknown-audit":["list non-resolved unknown heads","prioritize contradicted/high-severity items","choose the cheapest probe meeting required authority","update by expected revision","do not mark resolved without qualifying evidence"],
+      "process-capture":["declare exact command/cwd/environment and snapshot paths","run bounded capture","preserve truncation as unknown","compare original and candidate by dimension","localize first divergence"],
     }
     return {"investigator":kind,"goal":goal,"steps":recipes.get(kind,recipes["protocol"])}
 
@@ -166,8 +175,8 @@ def main()->int:
     st=sub.add_parser("stack-strings"); st.add_argument("target")
     c=sub.add_parser("constants"); c.add_argument("target")
     v=sub.add_parser("verify"); v.add_argument("target")
-    sp=sub.add_parser("investigator"); sp.add_argument("kind",choices=("protocol","cpp-class","crypto","filesystem","rendering","version-diff")); sp.add_argument("goal")
-    fa=sub.add_parser("frontier-add"); fa.add_argument("text"); fa.add_argument("--ea"); fa.add_argument("--priority",type=float,default=1.0); fa.add_argument("--cost",type=float,default=1.0); fa.add_argument("--investigator",default="general")
+    sp=sub.add_parser("investigator"); sp.add_argument("kind",choices=("protocol","cpp-class","crypto","filesystem","rendering","version-diff","crash","reconstruction","unknown-audit","process-capture")); sp.add_argument("goal")
+    fa=sub.add_parser("frontier-add"); fa.add_argument("text"); fa.add_argument("--ea"); fa.add_argument("--priority",type=float,default=1.0); fa.add_argument("--cost",type=float,default=1.0); fa.add_argument("--investigator",default="general"); fa.add_argument("--unknown-id"); fa.add_argument("--required-authority")
     fn=sub.add_parser("frontier-next"); fn.add_argument("--limit",type=int,default=20)
     a=ap.parse_args()
     with open_database(a.binary) as db:
@@ -183,7 +192,7 @@ def main()->int:
         elif a.cmd=="investigator": result=specialist(a.kind,a.goal)
         else:
             path,con=frontier_db(root)
-            if a.cmd=="frontier-add": frontier_add(con,a.text,a.ea,a.priority,a.cost,a.investigator); result={"added":True,"database":str(path)}
+            if a.cmd=="frontier-add": frontier_add(con,a.text,a.ea,a.priority,a.cost,a.investigator,a.unknown_id,a.required_authority); result={"added":True,"database":str(path),"unknown_id":a.unknown_id}
             else: result=frontier_next(con,a.limit)
             con.close()
         out=root/"queries"/f"advanced_{a.cmd}.json"; out.write_text(json.dumps(result,indent=2,ensure_ascii=False,default=str)+"\n",encoding="utf-8")

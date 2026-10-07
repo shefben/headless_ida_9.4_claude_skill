@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Revisioned Residual Unknown",
+  "type": "object",
+  "required": [
+    "unknown_id",
+    "revision",
+    "revision_digest",
+    "scope_digest",
+    "question",
+    "status",
+    "severity",
+    "domain",
+    "supporting_evidence_ids",
+    "contradicting_evidence_ids",
+    "required_confidence",
+    "recommended_probes",
+    "relationships",
+    "mutation_evidence_ids"
+  ],
+  "properties": {
+    "unknown_id": {
+      "type": "string",
+      "pattern": "^unk_[0-9a-f]{64}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "previous_revision_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revision_digest": {
+      "type": "string"
+    },
+    "scope_digest": {
+      "type": "string"
+    },
+    "question": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "investigating",
+        "blocked",
+        "contradicted",
+        "resolved"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "domain": {
+      "type": "string"
+    },
+    "supporting_evidence_ids": {
+      "type": "array"
+    },
+    "contradicting_evidence_ids": {
+      "type": "array"
+    },
+    "required_authority": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "required_confidence": {
+      "enum": [
+        "observed",
+        "derived",
+        "inferred"
+      ]
+    },
+    "required_environment": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "recommended_probes": {
+      "type": "array"
+    },
+    "relationships": {
+      "type": "array"
+    },
+    "resolution": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "mutation_evidence_ids": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

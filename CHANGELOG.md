@@ -1,5 +1,26 @@
 # Changelog
 
+## 4.0.0-ida9.4
+
+- Added deterministic content-addressed Evidence envelopes (`ev_<sha256>`) binding target SHA-256, provider/profile, operation, parameters, result, confidence, authority, limitations, locations, and Evidence links.
+- Added categorical evidence confidence (`observed`, `derived`, `inferred`) and authority separation (`shipped-artifact`, `controlled-replay`, `historical-reference`, `external-service`, `analyst-inference`).
+- Added concrete IDA/Hex-Rays/ida-domain analysis-profile commitments persisted automatically for every successful session.
+- Made semantic indexes profile-bound and made cross-version matching fail on missing/mismatched profile digests unless explicitly degraded.
+- Added exact immutable query snapshots keyed by binary SHA-256 + analysis-profile digest + operation + canonical parameters.
+- Added revisioned residual unknowns with stable IDs, severity/domain, supporting/contradicting Evidence, required authority/confidence/environment, probe recommendations, relationships, evidence-qualified resolution, and stale-revision rejection.
+- Added fail-closed completion ledgers where fail/unsupported/truncated/unknown can never aggregate to complete.
+- Added reconstruction obligation ledgers with implementation ownership, parser/schema/type requirements, original/reconstruction case coverage, residual-unknown blocking, contradictions, and verifier authority checks.
+- Added controlled process capture and original-vs-reconstruction comparison with bounded stdout/stderr/filesystem observations and first-divergence localization.
+- Added historical-source inventory that remains explicitly `historical-reference` rather than being merged into current-binary facts.
+- Added execution-free artifact/package inventory and optional explicitly configured JADX, Binwalk, and Unblob adapters whose output remains separate external evidence.
+- Added typed call-edge resolution: direct, uniquely resolved indirect, ambiguous candidate, and unresolved. Ambiguous candidates are no longer concrete traversal edges.
+- Added bounded interprocedural microcode value/call graphs with explicit depth/function/call/node/edge budgets and residual unknowns.
+- Added static tool-effect/capability contracts describing inspection, mutation, execution, extraction, idempotence, and prerequisites.
+- Added pure-Python conformance tests covering deterministic Evidence IDs, stale unknown revisions, fail-closed completion, and reconstruction closure.
+- Hardened IDA database lock handling with preserve-first best-effort owner diagnostics; the skill explicitly forbids deleting a locked IDB/i64 merely to regain access.
+- Expanded guided workflows for feature investigation, conservative version comparison, reconstruction verification, crash tracing, residual-unknown audits, and bounded process capture.
+- Added new progressive references for evidence/verification, reconstruction, runtime/artifact evidence, and optional external front ends.
+
 ## 3.0.0-ida9.4
 
 - Added `ida_batch.py` for multi-step analysis inside one IDA/Hex-Rays session.

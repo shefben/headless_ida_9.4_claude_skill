@@ -111,6 +111,57 @@
     "microcode_facts": {
       "type": "object",
       "additionalProperties": true
+    },
+    "evidence_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^ev_[0-9a-f]{64}$"
+    },
+    "authority": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "shipped-artifact",
+        "controlled-replay",
+        "historical-reference",
+        "external-service",
+        "analyst-inference",
+        null
+      ]
+    },
+    "evidence_confidence": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "observed",
+        "derived",
+        "inferred",
+        null
+      ]
+    },
+    "analysis_profile_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_links": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "additionalProperties": true

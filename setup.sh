@@ -4,6 +4,7 @@ set -e
 SKILL_DIR="$HOME/.claude/skills/ida-headless-analysis"
 mkdir -p "$HOME/.claude/skills"
 echo "Copying skill folder to $SKILL_DIR..."
+rm -rf "$SKILL_DIR"
 cp -r "ida-headless-analysis" "$SKILL_DIR"
 
 echo "Searching for IDA 9.2, 9.3, or 9.4 in environment variables..."

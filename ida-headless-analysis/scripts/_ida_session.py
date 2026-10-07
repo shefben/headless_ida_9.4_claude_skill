@@ -27,6 +27,36 @@ def cached_database_exists(binary_path: str | os.PathLike[str]) -> bool:
     return any(p.exists() for p in _candidate_idbs(binary))
 
 
+
+def database_lock_diagnostics(binary_path: str | os.PathLike[str]) -> dict[str, object]:
+    """Best-effort lock ownership diagnostics. Never deletes a database or sidecar.
+
+    IDA locking details vary by release and platform. We therefore report candidate databases and,
+    when psutil is available, processes that currently have one open. Failure to identify an owner
+    is unknown, not proof that a lock is stale.
+    """
+    binary = Path(binary_path)
+    candidates = [p.resolve() for p in _candidate_idbs(binary) if p.exists()]
+    owners = []
+    try:
+        import psutil
+        wanted = {str(p).lower() for p in candidates}
+        for proc in psutil.process_iter(["pid", "name", "exe"]):
+            try:
+                for opened in proc.open_files() or []:
+                    if str(Path(opened.path).resolve()).lower() in wanted:
+                        owners.append({"pid": proc.pid, "name": proc.info.get("name"), "exe": proc.info.get("exe"), "path": opened.path})
+            except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
+                continue
+    except Exception:
+        pass
+    return {
+        "candidate_databases": [str(p) for p in candidates],
+        "owners": owners,
+        "owner_known": bool(owners),
+        "policy": "preserve database; never delete a locked IDB/i64 merely to recover access",
+    }
+
 def _ensure_environment() -> None:
     os.environ["IDADIR"] = os.environ.get("IDADIR") or DEFAULT_IDADIR
     ida_dir = Path(os.environ["IDADIR"])
@@ -86,14 +116,38 @@ def open_database(
     )
 
     _enable_diagnostics()
-    with Database.open(
-        str(binary),
-        args=options,
-        save_on_close=save_on_close,
-    ) as db:
-        _wait_for_auto_analysis()
-        _initialize_hexrays()
-        yield db
+    try:
+        opened = Database.open(
+            str(binary),
+            args=options,
+            save_on_close=save_on_close,
+        )
+        with opened as db:
+            _wait_for_auto_analysis()
+            _initialize_hexrays()
+            # Persist the concrete provider/profile commitment for evidence and cache validation.
+            try:
+                from _common import ensure_state
+                from _provenance import save_analysis_profile
+                root = ensure_state(binary, {
+                    "architecture": str(getattr(getattr(db, "metadata", None), "architecture", "")),
+                    "bitness": getattr(getattr(db, "metadata", None), "bitness", None),
+                })
+                save_analysis_profile(root, db)
+            except Exception:
+                # Profile persistence must not hide a valid IDA session. Callers can run ida_profile.py
+                # explicitly if filesystem/state persistence is unavailable.
+                pass
+            yield db
+    except Exception as exc:
+        message = str(exc).lower()
+        if any(word in message for word in ("lock", "locked", "busy", "database is in use")):
+            diag = database_lock_diagnostics(binary)
+            raise RuntimeError(
+                f"IDA database open failed and may be locked: {exc}. "
+                f"Diagnostics={diag}. Do not delete the database; prove the owner/staleness first."
+            ) from exc
+        raise
 
 
 def decompile_raw(func_ea: int) -> str:

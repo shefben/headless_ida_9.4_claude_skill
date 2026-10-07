@@ -9,7 +9,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 from _ida_session import open_database
-from _common import ensure_state, safe_text
+from _common import ensure_state, safe_text, analysis_epoch
+from _provenance import build_analysis_profile
 import ida_query
 
 INTEREST_IMPORTS={
@@ -86,8 +87,12 @@ def fingerprint(stats,facts):
 
 def build_index(db, root, top=2000):
     path=root/"semantic.sqlite"; con=sqlite3.connect(path); cur=con.cursor()
-    cur.executescript("CREATE TABLE IF NOT EXISTS functions(ea TEXT PRIMARY KEY,name TEXT,summary TEXT,score REAL,fingerprint TEXT); CREATE VIRTUAL TABLE IF NOT EXISTS functions_fts USING fts5(ea UNINDEXED,name,summary);")
+    cur.executescript("CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS functions(ea TEXT PRIMARY KEY,name TEXT,summary TEXT,score REAL,fingerprint TEXT); CREATE VIRTUAL TABLE IF NOT EXISTS functions_fts USING fts5(ea UNINDEXED,name,summary);")
+    profile=build_analysis_profile(db)
     cur.execute("DELETE FROM functions"); cur.execute("DELETE FROM functions_fts")
+    cur.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('analysis_profile_digest',?)",(profile['digest'],))
+    cur.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('analysis_profile_json',?)",(json.dumps(profile,sort_keys=True),))
+    cur.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('analysis_epoch',?)",(str(int((root/"analysis_epoch.txt").read_text().strip()) if (root/"analysis_epoch.txt").exists() else 0),))
     for row in rank(db,top):
         ea=int(row["ea"],0)
         try: p=packet(db,row["ea"],40)
@@ -98,8 +103,21 @@ def build_index(db, root, top=2000):
     con.commit(); con.close(); return str(path)
 
 
-def semantic_search(root,q,limit=20):
-    path=root/"semantic.sqlite"; con=sqlite3.connect(path); con.row_factory=sqlite3.Row
+def semantic_search(root,q,limit=20,expected_profile_digest=None):
+    path=root/"semantic.sqlite"
+    if not path.exists(): raise RuntimeError("semantic index missing; run ida_intel.py BIN index")
+    con=sqlite3.connect(path); con.row_factory=sqlite3.Row
+    if expected_profile_digest is not None:
+        try: row=con.execute("SELECT value FROM metadata WHERE key='analysis_profile_digest'").fetchone()
+        except sqlite3.OperationalError: row=None
+        stored=row[0] if row else None
+        if stored != expected_profile_digest:
+            con.close(); raise RuntimeError(f"semantic index profile mismatch: stored={stored!r} current={expected_profile_digest!r}; rebuild index")
+        epoch_row=con.execute("SELECT value FROM metadata WHERE key='analysis_epoch'").fetchone()
+        stored_epoch=int(epoch_row[0]) if epoch_row else 0
+        current_epoch=int((root/"analysis_epoch.txt").read_text().strip()) if (root/"analysis_epoch.txt").exists() else 0
+        if stored_epoch != current_epoch:
+            con.close(); raise RuntimeError(f"semantic index invalidated by IDA database mutation: stored epoch={stored_epoch} current epoch={current_epoch}; rebuild index")
     rows=con.execute("SELECT f.ea,f.name,f.score,f.fingerprint,bm25(functions_fts) AS rank FROM functions_fts JOIN functions f USING(ea) WHERE functions_fts MATCH ? ORDER BY rank LIMIT ?",(q,limit)).fetchall(); con.close(); return [dict(r) for r in rows]
 
 
@@ -175,7 +193,7 @@ def main()->int:
         if a.cmd=="rank": result=rank(db,a.limit,a.regex)
         elif a.cmd=="packet": result=packet(db,a.target)
         elif a.cmd=="index": result={"index":build_index(db,root)}
-        elif a.cmd=="search": result=semantic_search(root,a.query,a.limit)
+        elif a.cmd=="search": result=semantic_search(root,a.query,a.limit,build_analysis_profile(db)["digest"])
         elif a.cmd=="struct": result=recover_struct(db,a.target)
         elif a.cmd=="cpp": result=cpp_classes(db)
         elif a.cmd=="dispatch": result=dispatch(db,a.target)

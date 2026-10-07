@@ -8,6 +8,8 @@ import re
 import subprocess
 from typing import Any, Iterable
 
+from _provenance import sha256_file
+
 
 def parse_ea(value: str) -> int:
     return int(value, 0)
@@ -32,13 +34,12 @@ def bounded(items: Iterable[Any], limit: int) -> tuple[list[Any], bool]:
     return out, truncated
 
 
+def binary_sha256(path: str | Path) -> str:
+    return sha256_file(path)
+
+
 def binary_id(path: str | Path) -> str:
-    p = Path(path)
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()[:16]
+    return binary_sha256(path)[:16]
 
 
 def _git_root(start: Path) -> Path | None:
@@ -121,6 +122,22 @@ def state_root(binary: str | Path, base: str | Path = ".ida-re") -> Path:
     return state_base(binary, base) / "binaries" / binary_id(binary)
 
 
+
+
+def analysis_epoch(binary: str | Path) -> int:
+    path = state_root(binary) / "analysis_epoch.txt"
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return 0
+
+
+def bump_analysis_epoch(binary: str | Path) -> int:
+    root = state_root(binary); root.mkdir(parents=True, exist_ok=True)
+    value = analysis_epoch(binary) + 1
+    (root / "analysis_epoch.txt").write_text(str(value) + "\n", encoding="utf-8")
+    return value
+
 def project_database_path(binary: str | Path | None = None, base: str | Path = ".ida-re") -> Path:
     """Default SQLite project graph path for the active project."""
     return state_base(binary, base) / "project.sqlite"
@@ -148,6 +165,7 @@ def ensure_state(binary: str | Path, metadata: dict[str, Any] | None = None) -> 
         payload = {
             "binary": str(Path(binary).resolve()),
             "binary_id": root.name,
+            "binary_sha256": binary_sha256(binary),
             "project_id": proj_id,
             "project_root": str(proj_root),
             "metadata": metadata or {},
